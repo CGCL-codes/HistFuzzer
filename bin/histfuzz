@@ -47,11 +47,6 @@ from src.building_blocks import export_buggy_seed
 from src.association import export_association_rules
 from src.skeleton import export_skeleton
 
-skeletons = rootpath + "/skeletons/skeleton.smt2"
-rules = rootpath + "/config/rules.txt"
-buggy = rootpath + "/seeds"
-temp = rootpath + "/temp"
-
 
 def run(skeleton_file, rules, buggy, argument, solver1, solver2, solver1_bin, solver2_bin, core_num, cores, add_option, mutant, tactic=None):
     """
@@ -68,6 +63,7 @@ def run(skeleton_file, rules, buggy, argument, solver1, solver2, solver1_bin, so
     :param mutant: Whether to use mutant or normal skeleton.
     :param tactic: Optional parameter to pass to the solvers.
     """
+    temp = rootpath + "/temp"
     # Iterate over the range of number of CPU cores to use
     for i in range(cores):
         # Spawn a new fuzzing process
@@ -173,6 +169,10 @@ def main():
             skeletons = rootpath + "/skeletons/skeleton_exclusion.smt2"
             rules = rootpath + "/config/rules_exclusion.txt"
             buggy = rootpath + "/seeds/exclusion"
+        else:
+            skeletons = rootpath + "/skeletons/skeleton.smt2"
+            rules = rootpath + "/config/rules.txt"
+            buggy = rootpath + "/seeds"
    
         # If any of the required options are missing, print an error message and return
         if None in [solver1, solver2, solver1_bin, solver2_bin]:

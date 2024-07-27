@@ -44,6 +44,7 @@ class MainArgumentParser(object):
         self.option = None
         self.mutant = None
         self.bugfolder = None
+        self.c1 = None
 
 
     def parse_arguments(self, parser):
@@ -62,6 +63,7 @@ class MainArgumentParser(object):
         parser.add_argument("--solverbin2", help="path to the second solver bin")
         parser.add_argument("--solver2", help=" the second solver name e.g. z3, cvc5")
         parser.add_argument("--incremental", nargs='?', const=True, default=False, help="incremental")
+        parser.add_argument("--c1", nargs='?', const=True, default=False, help="Employ the resource files for replicate evaluation C-1")
         parser.add_argument("--conf", help=" the min Confidence for association analysis")
         parser.add_argument("--sup", help=" the min Support for association analysis. Here, we use the number of "
                                           "occurrences of atomic formulas as Support.")
@@ -86,6 +88,7 @@ class MainArgumentParser(object):
         self.update = arguments["update"]
         self.token = arguments["token"]
         self.mutant = arguments["mutant"]
+        self.c1 = arguments["c1"]
         self.conf = float(arguments["conf"]) if arguments["conf"] is not None else 0.5
         self.sup = float(arguments["sup"]) if arguments["sup"] is not None else 9
         self.option = arguments["option"] if arguments["option"] is not None else "default"
@@ -105,5 +108,6 @@ class MainArgumentParser(object):
         self.parsed_arguments["mutant"] = self.mutant
         self.parsed_arguments["option"] = self.option
         self.parsed_arguments["bugfolder"] = self.bugfolder
+        self.parsed_arguments["c1"] = self.c1
 
         return self.parsed_arguments

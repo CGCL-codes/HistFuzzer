@@ -53,7 +53,7 @@ buggy = rootpath + "/seeds"
 temp = rootpath + "/temp"
 
 
-def run(skeleton_file, argument, solver1, solver2, solver1_bin, solver2_bin, core_num, cores, add_option, mutant, tactic=None):
+def run(skeleton_file, rules, buggy, argument, solver1, solver2, solver1_bin, solver2_bin, core_num, cores, add_option, mutant, tactic=None):
     """
     Runs multiple fuzzing processes in parallel, each with its own core affinity.
     :param skeleton_file: Path to the skeleton file to be used in the fuzzing process.
@@ -167,7 +167,13 @@ def main():
         solver2 = parsedArguments["solver2"]
         solver1_bin = parsedArguments["solverbin1"]
         solver2_bin = parsedArguments["solverbin2"]
-        
+
+        # Adjust the paths of resource files if replicating evaluation C-1
+        if parsedArguments["c1"]:
+            skeletons = rootpath + "/skeletons/skeleton_exclusion.smt2"
+            rules = rootpath + "/config/rules_exclusion.txt"
+            buggy = rootpath + "/seeds/exclusion"
+   
         # If any of the required options are missing, print an error message and return
         if None in [solver1, solver2, solver1_bin, solver2_bin]:
             print("Please check if the correct solvers and their binaries are given.")
@@ -178,7 +184,7 @@ def main():
         cores = int(parsedArguments["cores"])
         
         # Run the program with the provided parameters
-        run(skeletons, parsedArguments, solver1, solver2, solver1_bin, solver2_bin, core_num, cores, parsedArguments["option"], parsedArguments["mutant"])
+        run(skeletons, rules, buggy, parsedArguments, solver1, solver2, solver1_bin, solver2_bin, core_num, cores, parsedArguments["option"], parsedArguments["mutant"])
 
 if __name__ == "__main__":
     main()

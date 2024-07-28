@@ -43,7 +43,7 @@ def solver_runner(solver1_path, solver2_path, smt_file, timeout, incremental, so
     smt_file1 = smt_file
     smt_file2 = smt_file
     # If tactic is None, randomly add check-sat-using to the test instance for a Z3 solver
-    if tactic is None:
+    if tactic is None and add_option != "default":
         add_check_sat_using_flag = random.choice([False, True])
         if add_check_sat_using_flag and solver1 == "z3":
             tactic = z3_tactic(smt_file1)

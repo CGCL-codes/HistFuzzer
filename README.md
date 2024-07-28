@@ -74,6 +74,13 @@ Moreover, to run `n` parallel instances of $\mathrm{HistFuzz}$ on `n` cores, use
 
 Every time the tool detects a bug, you can manually stop the running process and inspect it in the `/home/histfuzz/temp` directory. These bugs can encompass soundness bugs, invalid model bugs, and crashes. The evaluation results prove that $\mathrm{HistFuzz}$ is capable of identifying genuine bugs in solvers.
 
+#### Evaluation C-1 for RQ2
+
+We provide resource files to replicate C-1. You can use the `--c1` flag to exclude bug reports resolved before the release of specific old versions, consistent with C-1. To run the evaluation, use the following command:
+
+`/home/histfuzz/bin/histfuzz --solver1=z3 --solver2=cvc5 --solverbin1=/home/z3/build/z3 --solverbin2=/home/cvc5/build/bin/cvc5 --option=default --c1`
+
+
 
 ###  **Task 2: Code coverage evaluation**
 

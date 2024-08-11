@@ -2,137 +2,163 @@ import subprocess
 import os
 import shutil
 import random
+import argparse
 
 
-def build_z3(commit, project_folder, sanitizer=False, jobs=1):
+def build_project(commit, project_folder, solver, sanitizer=False, jobs=1):
     try:
-        # copy the folder to a new folder
-        print("Building commit: " + commit)
-        new_folder = project_folder + "_" + commit
+        print(f"Building commit: {commit}")
+        new_folder = f"{project_folder}_{commit}"
 
         if os.path.exists(new_folder):
+            subprocess.run("find . -mindepth 1 -not -path \"./build*\" -delete", cwd=new_folder, shell=True)
             return new_folder
+
         shutil.copytree(project_folder, new_folder)
-        # checkout to the commit
         subprocess.run(["git", "checkout", commit], cwd=new_folder, check=True)
-        command = f"python3 scripts/mk_make.py -d; cd build; make -j{jobs}"
+
+        if solver == "z3":
+            command = f"python3 scripts/mk_make.py -d && cd build && make -j{jobs}"
+        elif solver in ["cvc5", "cvc4"]:
+            command = f"./configure.sh debug --auto-download --assertions && cd build && make -j{jobs}"
+
         if sanitizer:
-            command = f"CFLAGS+=\"-fsanitize=address -fsanitize-recover=address -U_FORTIFY_SOURCE -fno-omit-frame-pointer -fno-common\" CXXFLAGS+=\"-fsanitize=address -fsanitize-recover=address -U_FORTIFY_SOURCE -fno-omit-frame-pointer -fno-common\" LDFLAGS+=\"-fsanitize=address\" CC=clang CXX=clang++ {command}"
-        
-        build_process = subprocess.Popen(command, cwd=new_folder, shell=True, executable='/bin/bash')
-        return new_folder
-    except subprocess.CalledProcessError as e:
-        if build_process.returncode != 0:
-            print("Failed to build the project")
-            return None
+            if solver == "z3":
+                command = f'CFLAGS+="-fsanitize=address -fsanitize-recover=address -U_FORTIFY_SOURCE -fno-omit-frame-pointer -fno-common" ' \
+                          f'CXXFLAGS+="-fsanitize=address -fsanitize-recover=address -U_FORTIFY_SOURCE -fno-omit-frame-pointer -fno-common" ' \
+                          f'LDFLAGS+="-fsanitize=address" CC=clang CXX=clang++ {command}'
+            else:
+                command = command.replace("--assertions", "--asan --assertions")
+        # hide the output
+        build_process = subprocess.Popen(command, cwd=new_folder, shell=True, executable='/bin/bash',
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        build_process.communicate()  # Wait for the build to finish
 
+        # remove source code to save space. Use "find . -mindepth 1 -not -path "./build*" -delete"
+        # to remove all files except the build folder
+        subprocess.run("find . -mindepth 1 -not -path \"./build*\" -delete", cwd=new_folder, shell=True)
 
-def build_cvc(commit, project_folder, sanitizer=False, jobs=1):
-    try:
-        # copy the folder to a new folder
-        print("Building commit: " + commit)
-        new_folder = project_folder + "_" + commit
-
-        if os.path.exists(new_folder):
-            return new_folder
-        shutil.copytree(project_folder, new_folder)
-        # checkout to the commit
-        subprocess.run(["git", "checkout", commit], cwd=new_folder, check=True)
-        command = f"./configure.sh debug --auto-download --assertions; cd build; make -j{jobs}"
-        if sanitizer:
-            command = f"./configure.sh debug --auto-download --asan --assertions; cd build; make -j{jobs}"
-
-        build_process = subprocess.Popen(command, cwd=new_folder, shell=True, executable='/bin/bash')
         return new_folder
 
     except subprocess.CalledProcessError as e:
-        if build_process.returncode != 0:
-            print("Failed to build the project")
-            return None
-    
+        print(f"Failed to build the project: {e}")
+        return None
 
-    
 
 def test_commit(smt2_file, solver_path, message, timeout=10):
-    # run the test, the command is "build/bin/z3 -smt2 -st -T:10 smt2_file"
     try:
-        result = subprocess.run(f"timeout {timeout}s " + solver_path + " " + smt2_file + "> output.txt 2>&1", check=True, shell=True, executable='/bin/bash', stderr=subprocess.PIPE)
-        # check the output
-        stderr_output = result.stderr.decode('utf-8')
-        with open("output.txt", 'r') as f:
-            output = f.read()
-        if message in output or message in stderr_output:
-            if message.startswith("sat") and output.startswith("unsat"):
-                return False
-            return True
-        else:
-            return False
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 1:
-            return True
+        result = subprocess.run(
+            f"timeout {timeout}s {solver_path} {smt2_file}",
+            check=True, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
+
+        output = result.stdout.decode('utf-8') + result.stderr.decode('utf-8')
+        # The bug is found in the commit if the message is in the output
+        print(f"Output: {output}")
+        return message in output and not (message.startswith("sat") and output.startswith("unsat"))
+
+    except subprocess.CalledProcessError:
+        print("Failed to run the solver")
+        return None
 
 
-def find_bug_inducing_commit(commits, project_folder, key_word, bug_file, solver):
-    # Start the bisect process
-    low = 0
-    high = len(commits) - 1
+def find_commit(commits, project_folder, key_word, bug_file, solver, commit_type):
+    """
+    This function finds the commit by binary search.
+    If you want to find the first commit that induces the bug, it means the bug does not exist in the previous commits but exists in the current commit.
+    If you want to find the commit that fixes the bug, it means the bug exists in the previous commits but does not exist in the current commit.
+    """
+    low, high = 0, len(commits) - 1
 
     while low <= high:
+        print(f"Low: {low}, High: {high}")
         mid = (low + high) // 2
+        print(f"Mid: {mid}")
         new_folder = None
-        # Checkout to the commit
-        # subprocess.run(["git", "checkout", commits[mid]], check=True)
+
         while new_folder is None:
-            if solver == "z3":
-                new_folder = build_z3(commits[mid], project_folder=project_folder)
-            elif solver == "cvc5" or solver == "cvc4":
-                new_folder = build_cvc(commits[mid], project_folder=project_folder)
+            new_folder = build_project(commits[mid], project_folder, solver, jobs=24)
             if new_folder is None:
                 mid = random.randint(low, high)
+        solver_path = os.path.join(new_folder, "build")
         if solver == "z3":
-            solver_path = new_folder + "/build/z3"
+            solver_path = solver_path + "/z3" 
         elif solver == "cvc5":
-            solver_path = new_folder + "/build/bin/cvc5"
-        # Build and test the commit
-        if test_commit(bug_file, solver_path, key_word, timeout=10):
-            # If the bug is present, the bug-inducing commit is in the right half
-            low = mid + 1
-        else:
-            # If the bug is not present, the bug-inducing commit is in the left half
-            high = mid - 1
+            solver_path = solver_path + "/bin/cvc5"
+        # solver_path = os.path.join(new_folder, "build", "z3" if solver == "z3" else "bin", "cvc5" if solver == "cvc5" else "")
+        print(f"Solver path: {solver_path}")
 
-    # The bug-inducing commit is the first commit in the right half
-    bug_inducing_commit = commits[low] if low < len(commits) else None
+        solver_result = test_commit(bug_file, solver_path, key_word)
+        if solver_result is None:
+            print(f"Failed to test the commit: {commits[mid]}")
+            print(f"The range of the commits is from {commits[low]} to {commits[high]}")
+            print("Please check the commit manually")
+            return None
+        if commit_type == "inducing":
+            if solver_result:
+                print(f"Found the bug in commit: {commits[mid]}")
+                low = mid + 1
+            else:
+                print(f"No bug in commit: {commits[mid]}")
+                high = mid - 1
+        elif commit_type == "fixing":
+            if solver_result:
+                high = mid - 1
+            else:
+                low = mid + 1
 
-    return bug_inducing_commit
+    return commits[low] if low < len(commits) else None
 
 
 def read_commit_file(commit_file):
     with open(commit_file, 'r') as f:
-        commits = f.read().splitlines()
-    # Split the commits into two parts: 30d1800c3 #6916
-    commit_list = []
-    for commit in commits:
-        if commit != "":
-            commit_list.append(commit.split(" ")[0])
+        commits = [line.split()[0] for line in f if line.strip()]
+    return commits
 
-    return commit_list
+
+def main(commit_file, target_project, message, test_file, commit_type, start_commit=None, end_commit=None):
+    if not os.path.exists(target_project):
+        print("Cloning the project")
+        subprocess.run(
+            ["git", "clone", f"https://github.com/{'Z3Prover/z3' if target_project == 'z3' else 'cvc5/cvc5'}.git"]
+        )
+        if not os.path.exists(target_project):
+            print("Failed to clone the project")
+            return
+
+    if not os.path.exists(commit_file):
+        commit_file = os.path.join(target_project, "commits.txt")
+        subprocess.run("git log --oneline --abbrev=7 > commits.txt", cwd=target_project, executable='/bin/bash', shell=True)
+        if not os.path.exists(commit_file):
+            print("Failed to get the commit file")
+            return 
+
+    commits = read_commit_file(commit_file)
+
+    start_index = commits.index(start_commit) if start_commit else len(commits)
+    end_index = commits.index(end_commit) + 1 if end_commit else 0
+    print(f"Searching from {start_index} to {end_index}")
+    commits = commits[end_index:start_index]
+    # time.sleep(5)
+
+    interesting_commit = find_commit(commits, target_project, message, test_file, target_project, commit_type)
+    if interesting_commit is None:
+        print("Failed to find the interesting commit")
+    else:
+        print(f"Bug {commit_type} commit: {interesting_commit}")
 
 
 if __name__ == "__main__":
-    # The file contains the commits to be tested
-    commit_file = "/root/z3-ver/z3/commits.txt"
-    # The folder of the project
-    project_folder = "/root/z3-ver/z3"
-    # The keyword in the output
-    key_word = "AddressSanitizer"
-    # The file to be tested
-    bug_file = "/root/z3-ver/bug.smt2"
-    commits = read_commit_file(commit_file)
-    # remove items after the specified commit
-    commits = commits[commits.index("76f9e1d2b"):commits.index("e2db2b864")]
-    print(commits)
+    parser = argparse.ArgumentParser(description='This script finds the commit that induces or fixes the bug')
+    parser.add_argument('commit_file', type=str, help='The file that contains the commits of the project')
+    parser.add_argument('target_project', type=str, help='The target project')
+    parser.add_argument('message', type=str, help='The message that indicates the bug')
+    parser.add_argument('test_file', type=str, help='The test file')
+    parser.add_argument('commit_type', type=str, help='The type of the commit: inducing or fixing')
+    parser.add_argument('--start_commit', type=str, help='The start commit')
+    parser.add_argument('--end_commit', type=str, help='The end commit')
+    args = parser.parse_args()
 
+    main(args.commit_file, args.target_project, args.message, args.test_file, args.commit_type, args.start_commit, args.end_commit)
 
-    bug_inducing_commit = find_bug_inducing_commit(commits, project_folder, key_word, bug_file)
-    print(bug_inducing_commit)
+    # main("commits.txt", "z3", "unknown", "small.smt2", "inducing", "9eb566b", "1e6b137")

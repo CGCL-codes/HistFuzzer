@@ -143,7 +143,7 @@ def read_commit_file(commit_file):
     return commits
 
 
-def main(commit_file, target_project, message, test_file, commit_type, start_commit=None, end_commit=None):
+def main(target_project, message, test_file, commit_type, start_commit=None, end_commit=None):
     # Check if the target project directory exists
     if not os.path.exists(target_project):
         print("Cloning the project")
@@ -155,14 +155,12 @@ def main(commit_file, target_project, message, test_file, commit_type, start_com
             print("Failed to clone the project")
             return
 
-    # Check if the commit file exists
+    # Generate the commit file
+    commit_file = os.path.join(target_project, "commits.txt")
+    subprocess.run("git log --oneline --abbrev=7 > commits.txt", cwd=target_project, executable='/bin/bash', shell=True)
     if not os.path.exists(commit_file):
-        # Generate the commit file if it doesn't exist
-        commit_file = os.path.join(target_project, "commits.txt")
-        subprocess.run("git log --oneline --abbrev=7 > commits.txt", cwd=target_project, executable='/bin/bash', shell=True)
-        if not os.path.exists(commit_file):
-            print("Failed to get the commit file")
-            return 
+        print("Failed to get the commit file")
+        return 
 
     # Read the commits from the commit file
     commits = read_commit_file(commit_file)
@@ -183,7 +181,6 @@ def main(commit_file, target_project, message, test_file, commit_type, start_com
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='This script finds the commit that induces or fixes the bug')
-    parser.add_argument('commit_file', type=str, help='The file that contains the commits of the project')
     parser.add_argument('target_project', type=str, help='The target project')
     parser.add_argument('message', type=str, help='The message that indicates the bug')
     parser.add_argument('test_file', type=str, help='The test file')
@@ -192,4 +189,4 @@ if __name__ == "__main__":
     parser.add_argument('--end_commit', type=str, help='The end commit')
     args = parser.parse_args()
 
-    main(args.commit_file, args.target_project, args.message, args.test_file, args.commit_type, args.start_commit, args.end_commit)
+    main(args.target_project, args.message, args.test_file, args.commit_type, args.start_commit, args.end_commit)

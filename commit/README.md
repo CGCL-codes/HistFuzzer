@@ -32,7 +32,7 @@ python3 commit_check.py <target_project> <message> <test_file> <commit_type> [--
 #### Example
 
 ```bash
-python3 script_name.py z3 "error message" test.smt2 inducing --start_commit abc1234 --end_commit xyz7890
+python3 commit_check.py z3 "error message" test.smt2 inducing --start_commit abc1234 --end_commit xyz7890
 ```
 
 ### Notes
